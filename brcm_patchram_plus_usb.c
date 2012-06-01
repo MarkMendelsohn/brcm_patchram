@@ -316,7 +316,7 @@ hci_send_cmd_func(unsigned char *buf, int len)
 }
 
 void
-expired(int sig)
+expired(int sig __attribute__ ((unused)))
 {
 	hci_send_cmd_func(hci_reset, sizeof(hci_reset));
 	alarm(4);
