@@ -70,6 +70,8 @@
 #include <string.h>
 #include <signal.h>
 
+#include "brcm_btlib.h"
+
 #ifdef ANDROID
 #include <cutils/properties.h>
 #define LOG_TAG "brcm_patchram_plus_usb"
@@ -97,8 +99,8 @@ unsigned char hci_write_bd_addr[] = {
 
 #define HCIT_TYPE_COMMAND 1
 
-int
-test_patchram_filename(char *hcdpath)
+static int
+test_patchram_filename(const char *hcdpath)
 {
 	/*
 		FIXME: Is this check necessesary?  I guess
@@ -119,8 +121,8 @@ test_patchram_filename(char *hcdpath)
 	return(0);
 }
 
-int
-parse_bdaddr(char *optarg)
+static int
+parse_bdaddr(const char *optarg)
 {
 	int bd_addr[6];
 
@@ -134,12 +136,12 @@ parse_bdaddr(char *optarg)
 	return(0);
 }
 
-int
-parse_cmd_line(int argc, char *argv[], char **patchram_path, char **hci_device, char **baseaddr)
+static int
+parse_cmd_line(int argc, char *argv[], char ** restrict patchram_path, char ** restrict hci_device, char ** restrict bdaddr)
 {
 
 	/* Iniitalize our 'out variables' -- the parameters we'll be passing back to main. */
-	*patchram_path = *hci_device = *baseaddr = NULL;
+	*patchram_path = *hci_device = *bdaddr = NULL;
 
 	static struct option long_options[] = {
 		{"patchram",	1,	NULL, 'p'},
@@ -160,7 +162,7 @@ parse_cmd_line(int argc, char *argv[], char **patchram_path, char **hci_device, 
 
 			case 'b':
 				/* --bd_addr or -b */
-				*baseaddr = optarg;
+				*bdaddr = optarg;
 				break;
 
 			case 'd':
@@ -180,8 +182,8 @@ parse_cmd_line(int argc, char *argv[], char **patchram_path, char **hci_device, 
 		}
 	}
 
-	if (*baseaddr != NULL)
-		parse_bdaddr(*baseaddr);
+	if (*bdaddr != NULL)
+		parse_bdaddr(*bdaddr);
 	
 	if (optind < argc)
 		*hci_device = argv[optind];
@@ -189,7 +191,7 @@ parse_cmd_line(int argc, char *argv[], char **patchram_path, char **hci_device, 
 	return 0;
 }
 
-void
+static void
 init_hci(int hcifd)
 {
 	struct hci_filter flt;
@@ -201,7 +203,7 @@ init_hci(int hcifd)
 	setsockopt(hcifd, SOL_HCI, HCI_FILTER, &flt, sizeof(flt));
 }
 
-void
+static void
 dump(unsigned char *out, ssize_t len)
 {
 	for (int i = 0; i < len; i++) {
@@ -214,7 +216,7 @@ dump(unsigned char *out, ssize_t len)
 	fprintf(stderr, "\n");
 }
 
-ssize_t
+static ssize_t
 read_event(int fd, unsigned char *buffer)
 {
 	ssize_t bytesin = read(fd, buffer, 260);
@@ -227,7 +229,7 @@ read_event(int fd, unsigned char *buffer)
 	return bytesin;
 }
 
-void
+static void
 hci_send_data(int hcifd, unsigned char *buf, int len)
 {
 	/* Attempt to write data to socket.  If we get an EAGAIN or EINTR,
@@ -240,7 +242,7 @@ hci_send_data(int hcifd, unsigned char *buf, int len)
 		}
 }
 
-void
+static void
 hci_send_command(int hcifd, unsigned char *buf, int len)
 {
 	hci_command_hdr hc;
@@ -271,7 +273,7 @@ hci_send_command(int hcifd, unsigned char *buf, int len)
 		}
 }
 
-void
+static void
 hci_send_cmd_func(int hcifd, unsigned char *buf, int len)
 {
 	if (debug) {
@@ -285,7 +287,7 @@ hci_send_cmd_func(int hcifd, unsigned char *buf, int len)
 		hci_send_data(hcifd, buf, len);
 }
 
-void
+static void
 proc_reset(int hcifd)
 {
 	for (unsigned try = 0; try < 5; try++) {
@@ -303,7 +305,7 @@ proc_reset(int hcifd)
 	}
 }
 
-void
+static void
 proc_patchram(int hcifd, int hcdfd)
 {
 	hci_send_cmd_func(hcifd, hci_download_minidriver, sizeof(hci_download_minidriver));
@@ -324,7 +326,7 @@ proc_patchram(int hcifd, int hcdfd)
 	proc_reset(hcifd);
 }
 
-void
+static void
 proc_bdaddr(int hcifd)
 {
 	hci_send_cmd_func(hcifd, hci_write_bd_addr, sizeof(hci_write_bd_addr));
@@ -374,25 +376,77 @@ read_default_bdaddr()
 }
 #endif
 
-int
-conn_list(int s, int dev_id, void *arg)
+static int
+dev_list(int s __attribute__ ((unused)), int dev_id, void *arg)
 {
 	size_t *count = arg;
-	*count++;
-	fprintf(stderr,"Found: hci%d\n", dev_id);
+	(*count)--;
+	fprintf(stderr,"hci%d%s\n", dev_id, *count == 0 ? "" : ", ");
 	return 0;
 }
 
+static int
+dev_get_first(int s __attribute__ ((unused)), int dev_id, void *arg)
+{
+	int *d = arg;
+	*d = dev_id;
+	return 1;
+}
+
+static int
+dev_count(int s __attribute__ ((unused)), int dev_id __attribute__ ((unused)), void *arg)
+{
+	size_t *count = arg;
+	(*count)++;
+	return 0;
+}
+
+static int
+get_hci_device(const char *hci_device)
+{
+	int dev_id = -1;
+
+	if (hci_device == NULL) {
+		fprintf(stderr,"Scanning for hcd device...\n");
+		/*
+			 The user didn't specify an hci device.  So --
+			 we should first count the number of devices
+			 we have.  If we find one, then open it.  If we
+			 find more than one, we should ask the user
+			 to be more specific.  If we don't find *any*,
+			 then we print an error.
+		 */
+		size_t devices = 0;
+		brcm_hci_for_each_dev(HCI_UP, dev_count, &devices);
+
+		if (devices > 1) {
+			/* Found more than we can handle. :( */
+			fprintf(stderr, "error: Found more than one bluetooth device.  You must specify which one.\n  ");
+			brcm_hci_for_each_dev(HCI_UP, dev_list, &devices);
+		} else if (devices == 0) {
+			/* Didn't find any. :( */
+			fprintf(stderr, "error: Could not find any bluetooth devices.\n");
+		} else if (devices == 1) {
+			/* Found only one -- this will be the one we patch. */
+			brcm_hci_for_each_dev(HCI_UP, dev_get_first, &dev_id);
+		}
+	} else {
+		dev_id = hci_devid(hci_device);
+	}
+
+	return dev_id;
+}
+
 int
-main (int argc, char **argv)
+main (int argc, char *argv[])
 {
 #ifdef ANDROID
 	read_default_bdaddr();
 #endif
 
-	char *patchram_path = NULL, *hci_device = NULL, *baseaddr = NULL;
+	char *patchram_path = NULL, *hci_device = NULL, *bdaddr = NULL;
 
-	parse_cmd_line(argc, argv, &patchram_path, &hci_device, &baseaddr);
+	parse_cmd_line(argc, argv, &patchram_path, &hci_device, &bdaddr);
 
 	if (patchram_path == NULL) {
 		fprintf(stderr, "You must supply a patch RAM file with --patchram.\n");
@@ -408,20 +462,10 @@ main (int argc, char **argv)
 		exit(5);
 	}
 
-	if (hci_device == NULL) {
-		/*
-			 The user didn't specify an hci device.  So --
-			 we should first count the number of devices
-			 we have.  If we find one, then open it.  If we
-			 find more than one, we should ask the user
-			 to be more specific.  If we don't find *any*,
-			 then we print an error.
-		 */
-		size_t devices = 0;
-		hci_for_each_dev(HCI_UP, (int(*)(int,int,long))conn_list, (long)&devices);
-	}
+	int dev_id = get_hci_device(hci_device);
 
-	int dev_id = hci_devid(hci_device);
+	fprintf(stderr, "Using devid %d\n", dev_id);
+
 	if (dev_id == -1) {
 		fprintf(stderr, "device %s could not be found\n", hci_device);
 		exit(1);
@@ -440,7 +484,7 @@ main (int argc, char **argv)
 	if (hcdfd > 0)
 		proc_patchram(hcifd, hcdfd);
 
-	if (baseaddr != NULL)
+	if (bdaddr != NULL)
 		proc_bdaddr(hcifd);
 
 	exit(0);
