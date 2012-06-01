@@ -142,81 +142,69 @@ parse_bdaddr(char *optarg)
 int
 parse_cmd_line(int argc, char **argv)
 {
+	int (*parse_param[])() = { parse_patchram, parse_bdaddr };
+
+	static struct option long_options[] = {
+		{"patchram", 1, 0, 0},
+		{"bd_addr", 1, 0, 0},
+		{0, 0, 0, 0}
+	};
+
+
+	/* Handle command line arguments. */
 	int c;
-	int dev_id;
-
-	typedef int (*PFI)();
-
-	PFI parse_param[] = { parse_patchram, parse_bdaddr };
-
-	while (1)
-	{
-	    int option_index = 0;
-
-	   	static struct option long_options[] = {
-	     {"patchram", 1, 0, 0},
-	     {"bd_addr", 1, 0, 0},
-	     {0, 0, 0, 0}
-	   	};
-
-	   	c = getopt_long_only (argc, argv, "d", long_options, &option_index);
-
-	   	if (c == -1) {
-	  		break;
-		}
-
-	   	switch (c) {
+	int option_index = 0;
+	while ((c = getopt_long_only(argc, argv, "d", long_options, &option_index)) != -1) {
+		switch (c) {
 	    case 0:
-	    	printf ("option %s", long_options[option_index].name);
+	    	printf("option %s", long_options[option_index].name);
 
-	    	if (optarg) {
-	       		printf (" with arg %s", optarg);
-			}
+	    	if (optarg)
+					printf(" with arg %s", optarg);
 
-	       	printf ("\n");
+				printf("\n");
 
-			(*parse_param[option_index])(optarg);
-		break;
+				(*parse_param[option_index])(optarg);
+				break;
 
-		case 'd':
-			debug = 1;
-		break;
+			case 'd':
+				debug = 1;
+				break;
 
 	    case '?':
-			//nobreak
-	    default:
-
-			printf("Usage %s:\n", argv[0]);
-			printf("\t<-d> to print a debug log\n");
-			printf("\t<--patchram patchram_file>\n");
-			printf("\t<--bd_addr bd_address>\n");
-			printf("\tbluez_device_name\n");
-	       	break;
-
-	    	}
+			default:
+				printf("Usage %s:\n", argv[0]);
+				printf("\t<-d> to print a debug log\n");
+				printf("\t<--patchram patchram_file>\n");
+				printf("\t<--bd_addr bd_address>\n");
+				printf("\tbluez_device_name\n");
+				break;
+		}
 	}
 	
 	if (optind < argc) {
-	   		printf ("%s ", argv[optind]);
+		printf ("%s ", argv[optind]);
 
-			if ((dev_id = hci_devid(argv[optind])) == -1) {
-				fprintf(stderr, "device %s could not be found\n", argv[optind]);
-				exit(1);
-			}
+		int dev_id= hci_devid(argv[optind]);
 
-			printf("devid %d\n", dev_id);
-
-			if ((sock = hci_open_dev(dev_id)) == -1) {
-				fprintf(stderr, "device %s could not be found\n", argv[optind]);
-				exit(2);
-			}
-
-			printf("sock %d\n", sock);
+		if (dev_id == -1) {
+			fprintf(stderr, "device %s could not be found\n", argv[optind]);
+			exit(1);
 		}
 
-	   	printf ("\n");
+		printf("devid %d\n", dev_id);
 
-	return(0);
+		if ((sock = hci_open_dev(dev_id)) == -1) {
+			fprintf(stderr, "device %s could not be found\n", argv[optind]);
+			exit(2);
+		}
+
+		printf("sock %d\n", sock);
+	}
+
+	printf("\n");
+
+	return 0;
 }
 
 void
