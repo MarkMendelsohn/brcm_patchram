@@ -16,9 +16,9 @@
 #
 ###########################################################################
 
-LDFLAGS := -lbluetooth
-CFLAGS	:= -Wall -MMD -std=c99 -g
-TARGETS :=	brcm_patchram_plus brcm_patchram_plus_h5 brcm_patchram_plus_usb
+LDFLAGS :=	-lbluetooth
+CFLAGS	:=	-Wall -W -MMD -std=gnu99
+TARGETS :=	brcm_patchram_plus_usb # brcm_patchram_plus brcm_patchram_plus_h5
 
 .PHONY : clean
 
@@ -29,6 +29,7 @@ brcm_patchram_plus_h5: brcm_patchram_plus_h5.o
 brcm_patchram_plus: brcm_patchram_plus.o
 
 brcm_patchram_plus_usb: brcm_patchram_plus_usb.o
+	$(CC) $^ -o $@ $(LDFLAGS)
 
 -include *.d
 
