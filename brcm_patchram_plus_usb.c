@@ -253,7 +253,7 @@ read_event(int fd, unsigned char *buffer)
 	int i = 0;
 	int count;
 
-	count = read(sock, &buffer[i], 260);
+	count = read(fd, &buffer[i], 260);
 
 	if (debug) {
 		count += i;
