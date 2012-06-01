@@ -49,6 +49,7 @@
 ******************************************************************************/
 #include <stdio.h>
 #include <getopt.h>
+#include <strings.h>
 #include <errno.h>
 
 #include <sys/types.h>
