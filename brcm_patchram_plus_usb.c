@@ -18,35 +18,36 @@
  */
 
 
-/*****************************************************************************
-**                                                                           
-**  Name:          brcm_patchram_plus_usb.c
-**
-**  Description:   This program downloads a patchram files in the HCD format
-**                 to Broadcom Bluetooth based silicon and combo chips and
-**				   and other utility functions.
-**
-**                 It can be invoked from the command line in the form
-**						<-d> to print a debug log
-**						<--patchram patchram_file>
-**						<--bd_addr bd_address>
-**						bluez_device_name
-**
-**                 For example:
-**
-**                 brcm_patchram_plus -d --patchram  \
-**						BCM2045B2_002.002.011.0348.0349.hcd hci0
-**
-**                 It will return 0 for success and a number greater than 0
-**                 for any errors.
-**
-**                 For Android, this program invoked using a 
-**                 "system(2)" call from the beginning of the bt_enable
-**                 function inside the file 
-**                 mydroid/system/bluetooth/bluedroid/bluetooth.c.
-**
-**  
-******************************************************************************/
+/*
+*                                                                           
+*  Name:          brcm_patchram_plus_usb.c
+*
+*  Description:   This program downloads a patchram files in the HCD format
+*                 to Broadcom Bluetooth based silicon and combo chips and
+*				   and other utility functions.
+*
+*                 It can be invoked from the command line in the form
+*						<-d> to print a debug log
+*						<--patchram patchram_file>
+*						<--bd_addr bd_address>
+*						bluez_device_name
+*
+*                 For example:
+*
+*                 brcm_patchram_plus -d --patchram  \
+*						BCM2045B2_002.002.011.0348.0349.hcd hci0
+*
+*                 It will return 0 for success and a number greater than 0
+*                 for any errors.
+*
+*                 For Android, this program invoked using a 
+*                 "system(2)" call from the beginning of the bt_enable
+*                 function inside the file 
+*                 mydroid/system/bluetooth/bluedroid/bluetooth.c.
+*
+*  
+*/
+
 #include <stdio.h>
 #include <getopt.h>
 #include <strings.h>
@@ -98,22 +99,23 @@ unsigned char hci_write_bd_addr[] = {
 #define HCIT_TYPE_COMMAND 1
 
 int
-parse_patchram(char *optarg)
+check_patchram_filename(char *hcdpath)
 {
+	/*
+    FIXME: Is this check necessesary?  I guess all broadcom supplied HCD
+    files will be named this way but it is possible that someone might
+    rename them.
+
+		A better sanity check would be to have a magic sequence at the begining
+		of the file that identifies it as an HCD.
+  */
 	char *p;
-
-	if (!(p = strrchr(optarg, '.'))) {
-		fprintf(stderr, "file %s not an HCD file\n", optarg);
-		exit(3);
-	}
-
-	p++;
-
-	if (strcasecmp("hcd", p) != 0) {
-		fprintf(stderr, "file %s not an HCD file\n", optarg);
+	if (((p = strrchr(hcdpath, '.')) == '\0') || (strcasecmp(".hcd", p) != 0)) {
+		fprintf(stderr, "error: %s does not appear to be an .hcd file.\n", optarg);
 		exit(4);
 	}
 
+	/* FIXME: We should probably open it later. */
 	if ((hcdfile_fd = open(optarg, O_RDONLY)) == -1) {
 		fprintf(stderr, "file %s could not be opened, error %d\n", optarg, errno);
 		exit(5);
@@ -126,15 +128,13 @@ int
 parse_bdaddr(char *optarg)
 {
 	int bd_addr[6];
-	int i;
 
 	sscanf(optarg, "%02x%02x%02x%02x%02x%02x", 
 		&bd_addr[0], &bd_addr[1], &bd_addr[2],
 		&bd_addr[3], &bd_addr[4], &bd_addr[5]);
 
-	for (i = 0; i < 6; i++) {
+	for (int i = 0; i < 6; i++)
 		hci_write_bd_addr[4 + i] = bd_addr[i];
-	}
 
 	bdaddr_flag = 1;	
 
@@ -142,37 +142,38 @@ parse_bdaddr(char *optarg)
 }
 
 int
-parse_cmd_line(int argc, char *argv[], int *hcifd)
+parse_cmd_line(int argc, char *argv[], int *hcifd, char **patchram_path)
 {
-	int (*parse_param[])() = { parse_patchram, parse_bdaddr };
-
 	static struct option long_options[] = {
-		{"patchram", 1, 0, 0},
-		{"bd_addr", 1, 0, 0},
-		{0, 0, 0, 0}
+		{"patchram",	1,	NULL, 'p'},
+		{"bd_addr",		1, 	NULL, 'b'},
+		{"debug",			0,	NULL, 'd'},
+		{"help",			0,	NULL, 'h'},
+		{0,						0,	0,		0}
 	};
 
 	/* Handle command line arguments. */
-	int c;
-	int option_index = 0;
-	while ((c = getopt_long_only(argc, argv, "d", long_options, &option_index)) != -1) {
-		switch (c) {
-	    case 0:
-	    	printf("option %s", long_options[option_index].name);
+	int arg, option_index = 0;
+	char *baseaddr = NULL;;
+	while ((arg = getopt_long(argc, argv, "p:b:dh", long_options, &option_index)) != -1) {
+		switch (arg) {
+	    case 'p':
+				/* --patchram or - p */
+				*patchram_path = optarg;
+				break;
 
-	    	if (optarg)
-					printf(" with arg %s", optarg);
-
-				printf("\n");
-
-				parse_param[option_index](optarg);
+			case 'b':
+				/* --bd_addr or -b */
+				baseaddr = optarg;
 				break;
 
 			case 'd':
+				/* --debug or -d */
 				debug = 1;
 				break;
 
 	    case '?':
+	    case 'h':
 			default:
 				printf("Usage %s:\n", argv[0]);
 				printf("\t<-d> to print a debug log\n");
@@ -182,6 +183,16 @@ parse_cmd_line(int argc, char *argv[], int *hcifd)
 				break;
 		}
 	}
+
+	if (patchram_path == NULL) {
+		fprintf(stderr, "You must supply a patch RAM file with --patchram.\n");
+		exit(0);
+	}
+
+	check_patchram_filename(*patchram_path);
+
+	if (baseaddr != 0)
+		parse_bdaddr(baseaddr);
 	
 	if (optind < argc) {
 		printf ("%s ", argv[optind]);
@@ -221,11 +232,9 @@ init_hci(int hcifd)
 }
 
 void
-dump(unsigned char *out, int len)
+dump(unsigned char *out, ssize_t len)
 {
-	int i;
-
-	for (i = 0; i < len; i++) {
+	for (int i = 0; i < len; i++) {
 		if (i && !(i % 16)) {
 			fprintf(stderr, "\n");
 		}
@@ -236,48 +245,39 @@ dump(unsigned char *out, int len)
 	fprintf(stderr, "\n");
 }
 
-void
+ssize_t
 read_event(int fd, unsigned char *buffer)
 {
-	int i = 0;
-	int count;
-
-	count = read(fd, &buffer[i], 260);
+	ssize_t bytesin = read(fd, buffer, 260);
 
 	if (debug) {
-		count += i;
-
-		fprintf(stderr, "received %d\n", count);
-		dump(buffer, count);
+		fprintf(stderr, "received %zd\n", bytesin);
+		dump(buffer, bytesin);
 	}
+
+	return bytesin;
 }
 
 void
-hci_send_cmd_func(int hcifd, unsigned char *buf, int len)
+hci_send_data(int hcifd, unsigned char *buf, int len)
 {
-	uint8_t type;
+	/* Attempt to write data to socket.  If we get an EAGAIN or EINTR,
+	   try again.  Otherwise, exit.
+	 */
+	while (write(hcifd, buf, len) < 0) 
+		if (errno != EAGAIN && errno != EINTR) {
+			perror("write():");
+			exit(0);
+		}
+}
+
+void
+hci_send_command(int hcifd, unsigned char *buf, int len)
+{
 	hci_command_hdr hc;
 	struct iovec iv[3];
 	int ivn;
-
-	if (debug) {
-		fprintf(stderr, "writing\n");
-		dump(buf, len);
-	}
-
-	if (buf[0] == HCIT_TYPE_COMMAND) {
-		type = HCI_COMMAND_PKT;
-	} else {
-		while (write(hcifd, buf, len) < 0) {
-			if (errno == EAGAIN || errno == EINTR) {
-				continue;
-			}
-
-			return;
-		}
-
-		return;
-	}
+	uint8_t type = HCI_COMMAND_PKT;
 
 	hc.opcode = buf[1] | (buf[2] << 8);
 	hc.plen = len - 4;
@@ -288,19 +288,32 @@ hci_send_cmd_func(int hcifd, unsigned char *buf, int len)
 	iv[1].iov_len = HCI_COMMAND_HDR_SIZE;
 	ivn = 2;
 
+	/* FIXME: Should this be if len - 4 > 0? */
 	if (len - 4) {
 		iv[2].iov_base = &buf[4];
 		iv[2].iov_len = len - 4;
 		ivn = 3;
 	}
 
-	while (writev(hcifd, iv, ivn) < 0) {
-		if (errno == EAGAIN || errno == EINTR) {
-			continue;
+	while (writev(hcifd, iv, ivn) < 0)
+		if (errno != EAGAIN && errno != EINTR) {
+			perror("writev()");
+			exit(0);
 		}
+}
 
-		return;
+void
+hci_send_cmd_func(int hcifd, unsigned char *buf, int len)
+{
+	if (debug) {
+		fprintf(stderr, "writing\n");
+		dump(buf, len);
 	}
+
+	if (buf[0] == HCIT_TYPE_COMMAND)
+		hci_send_command(hcifd, buf, len);
+	else
+		hci_send_data(hcifd, buf, len);
 }
 
 void
@@ -323,8 +336,6 @@ proc_reset(int hcifd)
 void
 proc_patchram(int hcifd)
 {
-	int len;
-
 	hci_send_cmd_func(hcifd, hci_download_minidriver, sizeof(hci_download_minidriver));
 
 	read_event(hcifd, buffer);
@@ -333,8 +344,7 @@ proc_patchram(int hcifd)
 
 	while (read(hcdfile_fd, &buffer[1], 3)) {
 		buffer[0] = 0x01;
-
-		len = buffer[3];
+		int len = buffer[3];
 
 		read(hcdfile_fd, &buffer[4], len);
 
@@ -350,7 +360,6 @@ void
 proc_bdaddr(int hcifd)
 {
 	hci_send_cmd_func(hcifd, hci_write_bd_addr, sizeof(hci_write_bd_addr));
-
 	read_event(hcifd, buffer);
 }
 
@@ -406,8 +415,9 @@ main (int argc, char **argv)
 #endif
 
 	int hcifd;
+	char *patchram_file = NULL;
 
-	parse_cmd_line(argc, argv, &hcifd);
+	parse_cmd_line(argc, argv, &hcifd, &patchram_file);
 
 	if (hcifd < 0)
 		exit(1);
@@ -416,13 +426,11 @@ main (int argc, char **argv)
 
 	proc_reset(hcifd);
 
-	if (hcdfile_fd > 0) {
+	if (hcdfile_fd > 0)
 		proc_patchram(hcifd);
-	}
 
-	if (bdaddr_flag) {
+	if (bdaddr_flag)
 		proc_bdaddr(hcifd);
-	}
 
-	return(0);
+	exit(0);
 }
