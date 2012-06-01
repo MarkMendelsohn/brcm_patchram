@@ -1,4 +1,4 @@
-/*******************************************************************************
+/*
  *
  *  brcm_patchram_plus_usb.c
  *  Copyright (C) 2009-2011 Broadcom Corporation
@@ -15,7 +15,7 @@
  *  See the License for the specific language governing permissions and
  *  limitations under the License.
  *
- ******************************************************************************/
+ */
 
 
 /*****************************************************************************
@@ -59,6 +59,8 @@
 
 #include <stdlib.h>
 
+#include <poll.h>
+
 #include <bluetooth/bluetooth.h>
 #include <bluetooth/hci.h>
 #include <bluetooth/hci_lib.h>
@@ -77,21 +79,21 @@
   { if(x==stderr) LOGE(__VA_ARGS__); else fprintf(x, __VA_ARGS__); }
 #endif //ANDROID
 
-int sock = -1;
+/* int sock = -1; */
 int hcdfile_fd = -1;
 int bdaddr_flag = 0;
 int enable_lpm = 0;
 int debug = 0;
 
 unsigned char buffer[1024];
-
 unsigned char hci_reset[] = { 0x01, 0x03, 0x0c, 0x00 };
-
 unsigned char hci_download_minidriver[] = { 0x01, 0x2e, 0xfc, 0x00 };
 
-unsigned char hci_write_bd_addr[] = { 0x01, 0x01, 0xfc, 0x06, 
-	0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-	0x00 };
+unsigned char hci_write_bd_addr[] = {
+	0x01, 0x01, 0xfc, 0x06, 
+	0x00, 0x00, 0x00, 0x00,
+	0x00, 0x00, 0x00
+};
 
 #define HCIT_TYPE_COMMAND 1
 
@@ -140,7 +142,7 @@ parse_bdaddr(char *optarg)
 }
 
 int
-parse_cmd_line(int argc, char **argv)
+parse_cmd_line(int argc, char *argv[], int *hcifd)
 {
 	int (*parse_param[])() = { parse_patchram, parse_bdaddr };
 
@@ -149,7 +151,6 @@ parse_cmd_line(int argc, char **argv)
 		{"bd_addr", 1, 0, 0},
 		{0, 0, 0, 0}
 	};
-
 
 	/* Handle command line arguments. */
 	int c;
@@ -194,12 +195,12 @@ parse_cmd_line(int argc, char **argv)
 
 		printf("devid %d\n", dev_id);
 
-		if ((sock = hci_open_dev(dev_id)) == -1) {
+		if ((*hcifd = hci_open_dev(dev_id)) == -1) {
 			fprintf(stderr, "device %s could not be found\n", argv[optind]);
 			exit(2);
 		}
 
-		printf("sock %d\n", sock);
+		printf("sock %d\n", *hcifd);
 	}
 
 	printf("\n");
@@ -208,7 +209,7 @@ parse_cmd_line(int argc, char **argv)
 }
 
 void
-init_hci()
+init_hci(int hcifd)
 {
 	struct hci_filter flt;
 
@@ -216,7 +217,7 @@ init_hci()
 	hci_filter_set_ptype(HCI_EVENT_PKT, &flt);
 	hci_filter_all_events(&flt);
 
-	setsockopt(sock, SOL_HCI, HCI_FILTER, &flt, sizeof(flt));
+	setsockopt(hcifd, SOL_HCI, HCI_FILTER, &flt, sizeof(flt));
 }
 
 void
@@ -252,7 +253,7 @@ read_event(int fd, unsigned char *buffer)
 }
 
 void
-hci_send_cmd_func(unsigned char *buf, int len)
+hci_send_cmd_func(int hcifd, unsigned char *buf, int len)
 {
 	uint8_t type;
 	hci_command_hdr hc;
@@ -267,7 +268,7 @@ hci_send_cmd_func(unsigned char *buf, int len)
 	if (buf[0] == HCIT_TYPE_COMMAND) {
 		type = HCI_COMMAND_PKT;
 	} else {
-		while (write(sock, buf, len) < 0) {
+		while (write(hcifd, buf, len) < 0) {
 			if (errno == EAGAIN || errno == EINTR) {
 				continue;
 			}
@@ -293,46 +294,40 @@ hci_send_cmd_func(unsigned char *buf, int len)
 		ivn = 3;
 	}
 
-	while (writev(sock, iv, ivn) < 0) {
+	while (writev(hcifd, iv, ivn) < 0) {
 		if (errno == EAGAIN || errno == EINTR) {
 			continue;
 		}
 
 		return;
 	}
-
 }
 
 void
-expired(int sig __attribute__ ((unused)))
+proc_reset(int hcifd)
 {
-	hci_send_cmd_func(hci_reset, sizeof(hci_reset));
-	alarm(4);
+	for (unsigned try = 0; try < 5; try++) {
+		hci_send_cmd_func(hcifd, hci_reset, sizeof(hci_reset));
+			
+		/* Wait 4 seconds for descriptor to be readable. */ 
+		struct pollfd pfd = { .fd = hcifd, .events = POLLIN };
+		int ready = poll(&pfd, 1, 4 * 1000);
+
+		if (ready == 1) {
+			read_event(hcifd, buffer);
+			break;
+		}
+	}
 }
 
 void
-proc_reset()
-{
-	signal(SIGALRM, expired);
-
-
-	hci_send_cmd_func(hci_reset, sizeof(hci_reset));
-
-	alarm(4);
-
-	read_event(sock, buffer);
-
-	alarm(0);
-}
-
-void
-proc_patchram()
+proc_patchram(int hcifd)
 {
 	int len;
 
-	hci_send_cmd_func(hci_download_minidriver, sizeof(hci_download_minidriver));
+	hci_send_cmd_func(hcifd, hci_download_minidriver, sizeof(hci_download_minidriver));
 
-	read_event(sock, buffer);
+	read_event(hcifd, buffer);
 
 	sleep(1);
 
@@ -343,20 +338,20 @@ proc_patchram()
 
 		read(hcdfile_fd, &buffer[4], len);
 
-		hci_send_cmd_func(buffer, len + 4);
+		hci_send_cmd_func(hcifd, buffer, len + 4);
 
-		read_event(sock, buffer);
+		read_event(hcifd, buffer);
 	}
 
-	proc_reset();
+	proc_reset(hcifd);
 }
 
 void
-proc_bdaddr()
+proc_bdaddr(int hcifd)
 {
-	hci_send_cmd_func(hci_write_bd_addr, sizeof(hci_write_bd_addr));
+	hci_send_cmd_func(hcifd, hci_write_bd_addr, sizeof(hci_write_bd_addr));
 
-	read_event(sock, buffer);
+	read_event(hcifd, buffer);
 }
 
 #ifdef ANDROID
@@ -410,22 +405,23 @@ main (int argc, char **argv)
 	read_default_bdaddr();
 #endif
 
-	parse_cmd_line(argc, argv);
+	int hcifd;
 
-	if (sock < 0) {
+	parse_cmd_line(argc, argv, &hcifd);
+
+	if (hcifd < 0)
 		exit(1);
-	}
 
-	init_hci();
+	init_hci(hcifd);
 
-	proc_reset();
+	proc_reset(hcifd);
 
 	if (hcdfile_fd > 0) {
-		proc_patchram();
+		proc_patchram(hcifd);
 	}
 
 	if (bdaddr_flag) {
-		proc_bdaddr();
+		proc_bdaddr(hcifd);
 	}
 
 	return(0);
