@@ -1,5 +1,4 @@
 /*
- *
  *  brcm_patchram_plus_usb.c
  *  Copyright (C) 2009-2011 Broadcom Corporation
  *
@@ -14,37 +13,40 @@
  *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
  *  See the License for the specific language governing permissions and
  *  limitations under the License.
- *
  */
 
 
 /*
 *                                                                           
-*  Name:          brcm_patchram_plus_usb.c
+*  Name: brcm_patchram_plus_usb.c
 *
-*  Description:   This program downloads a patchram files in the HCD format
-*                 to Broadcom Bluetooth based silicon and combo chips and
-*				   and other utility functions.
+*  Description:
 *
-*                 It can be invoked from the command line in the form
-*						<-d> to print a debug log
-*						<--patchram patchram_file>
-*						<--bd_addr bd_address>
-*						bluez_device_name
+*   This program downloads a patchram files
+*   in the HCD format to Broadcom Bluetooth
+*   based silicon and combo chips and and
+*   other utility functions.
 *
-*                 For example:
+*   It can be invoked from the command line
+*   in the form:
 *
-*                 brcm_patchram_plus -d --patchram  \
-*						BCM2045B2_002.002.011.0348.0349.hcd hci0
+*     --debug - Print a debug log
+*     --patchram <patchram_file>
+*			--bd_addr <bd_address>
+*		  bluez_device_name
 *
-*                 It will return 0 for success and a number greater than 0
-*                 for any errors.
+*  Example:
 *
-*                 For Android, this program invoked using a 
-*                 "system(2)" call from the beginning of the bt_enable
-*                 function inside the file 
-*                 mydroid/system/bluetooth/bluedroid/bluetooth.c.
+*    brcm_patchram_plus --debug \
+*         --patchram BCM2045B2_002.002.011.0348.0349.hcd hci0
 *
+*    It will return 0 for success and a number
+*    greater than 0 for any errors.
+*
+*    For Android, this program invoked using a
+*    "system(2)" call from the beginning of
+*    the bt_enable function inside the file
+*    mydroid/system/bluetooth/bluedroid/bluetooth.c.
 *  
 */
 
@@ -81,9 +83,7 @@
 #endif //ANDROID
 
 /* int sock = -1; */
-int hcdfile_fd = -1;
 int bdaddr_flag = 0;
-int enable_lpm = 0;
 int debug = 0;
 
 unsigned char buffer[1024];
@@ -99,26 +99,22 @@ unsigned char hci_write_bd_addr[] = {
 #define HCIT_TYPE_COMMAND 1
 
 int
-check_patchram_filename(char *hcdpath)
+test_patchram_filename(char *hcdpath)
 {
 	/*
-    FIXME: Is this check necessesary?  I guess all broadcom supplied HCD
-    files will be named this way but it is possible that someone might
-    rename them.
+		FIXME: Is this check necessesary?  I guess
+		all broadcom supplied HCD files will be named
+		this way but it is possible that someone might
+		rename them.
 
-		A better sanity check would be to have a magic sequence at the begining
-		of the file that identifies it as an HCD.
+		A better sanity check would be to have a
+		magic sequence at the begining of the file
+		that identifies it as an HCD.
   */
 	char *p;
 	if (((p = strrchr(hcdpath, '.')) == '\0') || (strcasecmp(".hcd", p) != 0)) {
 		fprintf(stderr, "error: %s does not appear to be an .hcd file.\n", optarg);
 		exit(4);
-	}
-
-	/* FIXME: We should probably open it later. */
-	if ((hcdfile_fd = open(optarg, O_RDONLY)) == -1) {
-		fprintf(stderr, "file %s could not be opened, error %d\n", optarg, errno);
-		exit(5);
 	}
 
 	return(0);
@@ -136,14 +132,16 @@ parse_bdaddr(char *optarg)
 	for (int i = 0; i < 6; i++)
 		hci_write_bd_addr[4 + i] = bd_addr[i];
 
-	bdaddr_flag = 1;	
-
 	return(0);
 }
 
 int
-parse_cmd_line(int argc, char *argv[], int *hcifd, char **patchram_path)
+parse_cmd_line(int argc, char *argv[], char **patchram_path, char **hci_device, char **baseaddr)
 {
+
+	/* Iniitalize our 'out variables' -- the parameters we'll be passing back to main. */
+	*patchram_path = *hci_device = *baseaddr = NULL;
+
 	static struct option long_options[] = {
 		{"patchram",	1,	NULL, 'p'},
 		{"bd_addr",		1, 	NULL, 'b'},
@@ -154,7 +152,6 @@ parse_cmd_line(int argc, char *argv[], int *hcifd, char **patchram_path)
 
 	/* Handle command line arguments. */
 	int arg, option_index = 0;
-	char *baseaddr = NULL;;
 	while ((arg = getopt_long(argc, argv, "p:b:dh", long_options, &option_index)) != -1) {
 		switch (arg) {
 	    case 'p':
@@ -164,7 +161,7 @@ parse_cmd_line(int argc, char *argv[], int *hcifd, char **patchram_path)
 
 			case 'b':
 				/* --bd_addr or -b */
-				baseaddr = optarg;
+				*baseaddr = optarg;
 				break;
 
 			case 'd':
@@ -184,37 +181,11 @@ parse_cmd_line(int argc, char *argv[], int *hcifd, char **patchram_path)
 		}
 	}
 
-	if (patchram_path == NULL) {
-		fprintf(stderr, "You must supply a patch RAM file with --patchram.\n");
-		exit(0);
-	}
-
-	check_patchram_filename(*patchram_path);
-
-	if (baseaddr != 0)
-		parse_bdaddr(baseaddr);
+	if (*baseaddr != NULL)
+		parse_bdaddr(*baseaddr);
 	
-	if (optind < argc) {
-		printf ("%s ", argv[optind]);
-
-		int dev_id= hci_devid(argv[optind]);
-
-		if (dev_id == -1) {
-			fprintf(stderr, "device %s could not be found\n", argv[optind]);
-			exit(1);
-		}
-
-		printf("devid %d\n", dev_id);
-
-		if ((*hcifd = hci_open_dev(dev_id)) == -1) {
-			fprintf(stderr, "device %s could not be found\n", argv[optind]);
-			exit(2);
-		}
-
-		printf("sock %d\n", *hcifd);
-	}
-
-	printf("\n");
+	if (optind < argc)
+		*hci_device = argv[optind];
 
 	return 0;
 }
@@ -235,9 +206,8 @@ void
 dump(unsigned char *out, ssize_t len)
 {
 	for (int i = 0; i < len; i++) {
-		if (i && !(i % 16)) {
+		if (i && !(i % 16))
 			fprintf(stderr, "\n");
-		}
 
 		fprintf(stderr, "%02x ", out[i]);
 	}
@@ -266,7 +236,7 @@ hci_send_data(int hcifd, unsigned char *buf, int len)
 	 */
 	while (write(hcifd, buf, len) < 0) 
 		if (errno != EAGAIN && errno != EINTR) {
-			perror("write():");
+			fprintf(stderr, "write(): failed (%s).\n", strerror(errno));
 			exit(0);
 		}
 }
@@ -334,7 +304,7 @@ proc_reset(int hcifd)
 }
 
 void
-proc_patchram(int hcifd)
+proc_patchram(int hcifd, int hcdfd)
 {
 	hci_send_cmd_func(hcifd, hci_download_minidriver, sizeof(hci_download_minidriver));
 
@@ -342,11 +312,11 @@ proc_patchram(int hcifd)
 
 	sleep(1);
 
-	while (read(hcdfile_fd, &buffer[1], 3)) {
+	while (read(hcdfd, &buffer[1], 3)) {
 		buffer[0] = 0x01;
 		int len = buffer[3];
 
-		read(hcdfile_fd, &buffer[4], len);
+		read(hcdfd, &buffer[4], len);
 
 		hci_send_cmd_func(hcifd, buffer, len + 4);
 
@@ -399,9 +369,8 @@ read_default_bdaddr()
 		return;
 	}
 
-	if (debug) {
+	if (debug)
 		printf("Read default bdaddr of %s\n", bdaddr);
-	}
 
 	parse_bdaddr(bdaddr);
 }
@@ -414,22 +383,44 @@ main (int argc, char **argv)
 	read_default_bdaddr();
 #endif
 
-	int hcifd;
-	char *patchram_file = NULL;
+	char *patchram_path = NULL, *hci_device = NULL, *baseaddr = NULL;
 
-	parse_cmd_line(argc, argv, &hcifd, &patchram_file);
+	parse_cmd_line(argc, argv, &patchram_path, &hci_device, &baseaddr);
 
-	if (hcifd < 0)
+	if (patchram_path == NULL) {
+		fprintf(stderr, "You must supply a patch RAM file with --patchram.\n");
+		exit(0);
+	}
+
+	/* Check if the patchram file's extenion is .hcd */
+	test_patchram_filename(patchram_path);
+
+	int hcdfd = open(patchram_path, O_RDONLY);
+	if (hcdfd == -1) {
+		fprintf(stderr, "error: Could not open hcd file %s (%s)\n", patchram_path, strerror(errno));
+		exit(5);
+	}
+
+	int dev_id = hci_devid(hci_device);
+	if (dev_id == -1) {
+		fprintf(stderr, "device %s could not be found\n", hci_device);
 		exit(1);
+	}
+
+	int hcifd = hci_open_dev(dev_id);
+	if (hcifd == -1) {
+		fprintf(stderr, "device %s could not be found\n", argv[optind]);
+		exit(2);
+	}
 
 	init_hci(hcifd);
 
 	proc_reset(hcifd);
 
-	if (hcdfile_fd > 0)
-		proc_patchram(hcifd);
+	if (hcdfd > 0)
+		proc_patchram(hcifd, hcdfd);
 
-	if (bdaddr_flag)
+	if (baseaddr != NULL)
 		proc_bdaddr(hcifd);
 
 	exit(0);
