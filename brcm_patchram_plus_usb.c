@@ -142,7 +142,6 @@ int
 parse_cmd_line(int argc, char **argv)
 {
 	int c;
-	int digit_optind = 0;
 	int dev_id;
 
 	typedef int (*PFI)();
@@ -151,7 +150,6 @@ parse_cmd_line(int argc, char **argv)
 
 	while (1)
 	{
-		int this_option_optind = optind ? optind : 1;
 	    int option_index = 0;
 
 	   	static struct option long_options[] = {
@@ -252,7 +250,6 @@ void
 read_event(int fd, unsigned char *buffer)
 {
 	int i = 0;
-	int len = 260;
 	int count;
 
 	count = read(sock, &buffer[i], 260);
