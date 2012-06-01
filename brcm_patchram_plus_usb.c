@@ -165,7 +165,7 @@ parse_cmd_line(int argc, char *argv[], int *hcifd)
 
 				printf("\n");
 
-				(*parse_param[option_index])(optarg);
+				parse_param[option_index](optarg);
 				break;
 
 			case 'd':
