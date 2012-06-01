@@ -28,7 +28,7 @@ brcm_patchram_plus_h5: brcm_patchram_plus_h5.o
 
 brcm_patchram_plus: brcm_patchram_plus.o
 
-brcm_patchram_plus_usb: brcm_patchram_plus_usb.o
+brcm_patchram_plus_usb: brcm_patchram_plus_usb.o brcm_btlib.o
 	$(CC) $^ -o $@ $(LDFLAGS)
 
 -include *.d

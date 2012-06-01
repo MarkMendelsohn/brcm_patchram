@@ -15,7 +15,6 @@
  *  limitations under the License.
  */
 
-
 /*
 *                                                                           
 *  Name: brcm_patchram_plus_usb.c
@@ -173,9 +172,9 @@ parse_cmd_line(int argc, char *argv[], char **patchram_path, char **hci_device, 
 	    case 'h':
 			default:
 				printf("Usage %s:\n", argv[0]);
-				printf("\t<-d> to print a debug log\n");
-				printf("\t<--patchram patchram_file>\n");
-				printf("\t<--bd_addr bd_address>\n");
+				printf("\t--debug - Print a debug log\n");
+				printf("\t--patchram patchram_file\n");
+				printf("\t--bd_addr bd_address\n");
 				printf("\tbluez_device_name\n");
 				break;
 		}
@@ -294,6 +293,7 @@ proc_reset(int hcifd)
 			
 		/* Wait 4 seconds for descriptor to be readable. */ 
 		struct pollfd pfd = { .fd = hcifd, .events = POLLIN };
+		/* FIXME: We should probably catch EINTR here or use ppoll(). */
 		int ready = poll(&pfd, 1, 4 * 1000);
 
 		if (ready == 1) {
@@ -317,9 +317,7 @@ proc_patchram(int hcifd, int hcdfd)
 		int len = buffer[3];
 
 		read(hcdfd, &buffer[4], len);
-
 		hci_send_cmd_func(hcifd, buffer, len + 4);
-
 		read_event(hcifd, buffer);
 	}
 
@@ -377,6 +375,15 @@ read_default_bdaddr()
 #endif
 
 int
+conn_list(int s, int dev_id, void *arg)
+{
+	size_t *count = arg;
+	*count++;
+	fprintf(stderr,"Found: hci%d\n", dev_id);
+	return 0;
+}
+
+int
 main (int argc, char **argv)
 {
 #ifdef ANDROID
@@ -399,6 +406,19 @@ main (int argc, char **argv)
 	if (hcdfd == -1) {
 		fprintf(stderr, "error: Could not open hcd file %s (%s)\n", patchram_path, strerror(errno));
 		exit(5);
+	}
+
+	if (hci_device == NULL) {
+		/*
+			 The user didn't specify an hci device.  So --
+			 we should first count the number of devices
+			 we have.  If we find one, then open it.  If we
+			 find more than one, we should ask the user
+			 to be more specific.  If we don't find *any*,
+			 then we print an error.
+		 */
+		size_t devices = 0;
+		hci_for_each_dev(HCI_UP, (int(*)(int,int,long))conn_list, (long)&devices);
 	}
 
 	int dev_id = hci_devid(hci_device);
