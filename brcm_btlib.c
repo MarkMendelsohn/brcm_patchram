@@ -7,7 +7,6 @@
 #include <bluetooth/hci.h>
 #include <bluetooth/hci_lib.h>
 
-/* HCI functions that do not require open device */  
 int brcm_hci_for_each_dev(int flag, int (*func)(int s, int dev_id, void *context), void *context)
 {
     int dev_id = -1;

@@ -17,7 +17,7 @@
 ###########################################################################
 
 LDFLAGS :=	-lbluetooth
-CFLAGS	:=	-Wall -W -MMD -std=gnu99
+CFLAGS	:=	-Wall -W -MMD -O3 -std=gnu99
 TARGETS :=	brcm_patchram_plus_usb brcm_patchram_plus brcm_patchram_plus_h5
 
 .PHONY : clean
