@@ -105,6 +105,7 @@
 #include <stdio.h>
 #include <getopt.h>
 #include <errno.h>
+#include <unistd.h>
 
 #include <sys/types.h>
 #include <sys/stat.h>
@@ -242,7 +243,7 @@ parse_patchram(char *optarg)
 		exit(5);
 	}
 
-	return(0);
+	return 0;
 }
 
 void
@@ -291,11 +292,11 @@ validate_baudrate(int baud_rate, int *value)
 	for (i = 0; i < (sizeof(baud_rates) / sizeof(tBaudRates)); i++) {
 		if (baud_rates[i].baud_rate == baud_rate) {
 			*value = baud_rates[i].termios_value;
-			return(1);
+			return 1;
 		}
 	}
 
-	return(0);
+	return 0;
 }
 
 int
@@ -306,10 +307,10 @@ parse_baudrate(char *optarg)
 	if (validate_baudrate(baudrate, &termios_baudrate)) {
 		BRCM_encode_baud_rate(baudrate, &hci_update_baud_rate[6]);
 	} else {
-		return(1);
+		return 1;
 	}
 
-	return(0);
+	return 0;
 }
 
 int
@@ -328,38 +329,38 @@ parse_bdaddr(char *optarg)
 
 	bdaddr_flag = 1;
 
-	return(0);
+	return 0;
 }
 
 int
-parse_enable_lpm(char *optarg)
+parse_enable_lpm(void)
 {
 	enable_lpm = 1;
-	return(0);
+	return 0;
 }
 
 int
-parse_use_baudrate_for_download(char *optarg)
+parse_use_baudrate_for_download(void)
 {
 	use_baudrate_for_download = 1;
-	return(0);
+	return 0;
 }
 
 int
-parse_enable_h4(char *optarg)
+parse_enable_h4(void)
 {
 	enable_h4 = 1;
-	return(0);
+	return 0;
 }
 
 int
-parse_enable_h5(char *optarg)
+parse_enable_h5(void)
 {
 	enable_h5 = 1;
-	return(0);
+	return 0;
 }
 
-int
+static int
 parse_scopcm(char *optarg)
 {
 	int param[10];
@@ -371,7 +372,7 @@ parse_scopcm(char *optarg)
 		&param[5], &param[6], &param[7], &param[8], &param[9]);
 
 	if (ret != 10) {
-		return(1);
+		return 1;
 	}
 
 	scopcm = 1;
@@ -384,7 +385,7 @@ parse_scopcm(char *optarg)
 		hci_write_pcm_data_format[4 + i] = param[5 + i];
 	}
 
-	return(0);
+	return 0;
 }
 
 int
@@ -398,7 +399,7 @@ parse_i2s(char *optarg)
 		&param[3]);
 
 	if (ret != 4) {
-		return(1);
+		return 1;
 	}
 
 	i2s = 1;
@@ -406,13 +407,15 @@ parse_i2s(char *optarg)
 	for (i = 0; i < 4; i++) {
 		hci_write_i2spcm_interface_param[4 + i] = param[i];
 	}
+
+	return 0;
 }
 
 int
-parse_no2bytes(char *optarg)
+parse_no2bytes(void)
 {
 	no2bytes = 1;
-	return(0);
+	return 0;
 }
 
 int
@@ -421,10 +424,10 @@ parse_tosleep(char *optarg)
 	tosleep = atoi(optarg);
 
 	if (tosleep <= 0) {
-		return(1);
+		return 1;
 	}
 
-	return(0);
+	return 0;
 }
 
 void
@@ -486,7 +489,6 @@ parse_cmd_line(int argc, char **argv)
 		parse_scopcm, parse_i2s, parse_no2bytes, parse_tosleep};
 
 	while (1) {
-		int this_option_optind = optind ? optind : 1;
 		int option_index = 0;
 
 		static struct option long_options[] = {
@@ -542,7 +544,7 @@ parse_cmd_line(int argc, char **argv)
 	}
 
 	if (ret) {
-		return(1);
+		return 1;
 	}
 
 	if (optind < argc) {
@@ -554,7 +556,7 @@ parse_cmd_line(int argc, char **argv)
 		}
 	}
 
-	return(0);
+	return 0;
 }
 
 void
@@ -651,27 +653,27 @@ hci_send_cmd(uchar *buf, int len)
 }
 
 void
-expired(int sig)
+expired(int sig __attribute__ ((unused)))
 {
 	hci_send_cmd(hci_reset, sizeof(hci_reset));
 	alarm(4);
 }
 
-void
-slip_expired(int sig)
+static void
+slip_expired(int sig __attribute__ ((unused)))
 {
 	hci_send_cmd(slip_sync, sizeof(slip_sync));
 	alarm(4);
 }
 
-void
-slip_config_expired(int sig)
+static void
+slip_config_expired(int sig __attribute ((unused)))
 {
 	hci_send_cmd(slip_config, sizeof(slip_config));
 	alarm(4);
 }
 
-void
+static void
 proc_reset()
 {
 	signal(SIGALRM, expired);
@@ -685,7 +687,7 @@ proc_reset()
 	alarm(0);
 }
 
-void
+static void
 proc_patchram()
 {
 	int len;
@@ -739,7 +741,7 @@ proc_patchram()
 	proc_reset();
 }
 
-void
+static void
 proc_baudrate()
 {
 	hci_send_cmd(hci_update_baud_rate, sizeof(hci_update_baud_rate));
@@ -757,7 +759,7 @@ proc_baudrate()
 	sleep(1);
 }
 
-void
+static void
 proc_bdaddr()
 {
 	hci_send_cmd(hci_write_bd_addr, sizeof(hci_write_bd_addr));
@@ -765,7 +767,7 @@ proc_bdaddr()
 	read_event(uart_fd, buffer);
 }
 
-void
+static void
 proc_enable_lpm()
 {
 	hci_send_cmd(hci_write_sleep_mode, sizeof(hci_write_sleep_mode));
@@ -773,7 +775,7 @@ proc_enable_lpm()
 	read_event(uart_fd, buffer);
 }
 
-void
+static void
 proc_scopcm()
 {
 	hci_send_cmd(hci_write_sco_pcm_int,
@@ -787,7 +789,7 @@ proc_scopcm()
 	read_event(uart_fd, buffer);
 }
 
-void
+static void
 proc_i2s()
 {
 	hci_send_cmd(hci_write_i2spcm_interface_param,
@@ -796,7 +798,7 @@ proc_i2s()
 	read_event(uart_fd, buffer);
 }
 
-void
+static void
 proc_enable_hci()
 {
 	int i = N_HCI;
@@ -866,7 +868,7 @@ read_default_bdaddr()
 }
 #endif
 
-int
+static int
 proc_slip_sync()
 {
 	int count;
@@ -894,10 +896,10 @@ proc_slip_sync()
 		}
 	}
 
-	return(ret);
+	return ret;
 }
 
-int
+static int
 proc_slip_config()
 {
 	int count;
@@ -935,24 +937,9 @@ proc_slip_config()
 	return(ret);
 }
 
-
-slip_read()
-{
-	int count;
-
-	count = read(uart_fd, buffer, 1024);
-
-	if (debug) {
-		fprintf(stderr, "received slip config %d\n", count);
-		dump(buffer, count);
-	}
-}
-
-
 int
 main (int argc, char **argv)
 {
-	char byte;
 #ifdef ANDROID
 	read_default_bdaddr();
 #endif
