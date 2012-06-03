@@ -107,6 +107,7 @@
 #include <stdio.h>
 #include <getopt.h>
 #include <errno.h>
+#include <unistd.h>
 
 #include <sys/types.h>
 #include <sys/stat.h>
@@ -308,24 +309,24 @@ parse_bdaddr(char *optarg)
 }
 
 int
-parse_enable_lpm(char *optarg)
+parse_enable_lpm(void)
 {
 	enable_lpm = 1;
-	return(0);
+	return 0;
 }
 
 int
-parse_use_baudrate_for_download(char *optarg)
+parse_use_baudrate_for_download(void)
 {
 	use_baudrate_for_download = 1;
-	return(0);
+	return 0;
 }
 
 int
-parse_enable_hci(char *optarg)
+parse_enable_hci(void)
 {
 	enable_hci = 1;
-	return(0);
+	return 0;
 }
 
 int
@@ -380,10 +381,10 @@ parse_i2s(char *optarg)
 }
 
 int
-parse_no2bytes(char *optarg)
+parse_no2bytes(void)
 {
 	no2bytes = 1;
-	return(0);
+	return 0;
 }
 
 int
@@ -457,7 +458,6 @@ parse_cmd_line(int argc, char **argv)
 		parse_scopcm, parse_i2s, parse_no2bytes, parse_tosleep};
 
 	while (1) {
-		int this_option_optind = optind ? optind : 1;
 		int option_index = 0;
 
 		static struct option long_options[] = {
@@ -611,7 +611,7 @@ hci_send_cmd(uchar *buf, int len)
 }
 
 void
-expired(int sig)
+expired(int sig __attribute__ ((unused)))
 {
 	hci_send_cmd(hci_reset, sizeof(hci_reset));
 	alarm(4);
