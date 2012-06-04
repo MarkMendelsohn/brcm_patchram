@@ -156,10 +156,7 @@ proc_reset(int hcifd)
 	}
 }
 
-
-
 /* patch related routines we want to expose. */
-
 int
 brcm_set_bdaddr_usb(int hcifd, const char *bdaddr_string)
 {
@@ -169,7 +166,7 @@ brcm_set_bdaddr_usb(int hcifd, const char *bdaddr_string)
 		0x00
 	};
 
-	int bd_addr[6];
+	unsigned bd_addr[6];
 	if (sscanf(bdaddr_string, "%02x:%02x:%02x:%02x:%02x:%02x", &bd_addr[0], &bd_addr[1], &bd_addr[2], &bd_addr[3], &bd_addr[4], &bd_addr[5]) != 6)
 		if (sscanf(bdaddr_string, "%02x%02x%02x%02x%02x%02x", &bd_addr[0], &bd_addr[1], &bd_addr[2], &bd_addr[3], &bd_addr[4], &bd_addr[5]) != 6)
 			return -1;
@@ -263,6 +260,7 @@ brcm_patchram_usb_init(const char *hci_device)
 	return hcifd;
 }
 
+/* FIXME: This should return something useful.  Perhaps bytes written? */
 void
 brcm_patchram_usb(int hcifd, int hcdfd /* readable descriptor for patchram file. */)
 {

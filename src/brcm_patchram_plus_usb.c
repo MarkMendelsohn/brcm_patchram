@@ -52,18 +52,21 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <strings.h>
+
+#define _GNU_SOURCE
+#include <string.h>		/* for strrchr() */
+
 #include <unistd.h>
 #include <getopt.h>
 #include <errno.h>
 #include <poll.h>
 
+#include <stdint.h>
+
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>
 
-#include <bluetooth/bluetooth.h>
-#include <bluetooth/hci.h>
-#include <bluetooth/hci_lib.h>
 
 #include "brcm_usb.h"
 
@@ -96,7 +99,7 @@ test_patchram_filename(const char *hcdpath)
 	if (((p = strrchr(hcdpath, '.')) == '\0') || (strcasecmp(".hcd", p) != 0))
 		return -1;
  
-	return(0);
+	return 0;
 }
 
 /*
@@ -234,14 +237,6 @@ main (int argc, char *argv[])
 	int hcdfd = open(patchram_path, O_RDONLY);
 	if (hcdfd == -1)
 		brcm_error(5, "error: Could not open hcd file %s (%s)\n", patchram_path, strerror(errno));
-
-
-/*
-	fprintf(stderr, "Using hci%d\n", dev_id);
-
-	if (dev_id == -1)
-		brcm_error(1, "device %s could not be found\n", hci_device);
-*/
 
 	int hcifd = brcm_patchram_usb_init(hci_device);
 
