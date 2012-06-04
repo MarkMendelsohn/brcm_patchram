@@ -1,6 +1,6 @@
 
 #include <unistd.h>
-#include <stdlib.h>		/* for malloc() and free() */
+#include <stdlib.h>			/* for malloc() and free() */
 #include <sys/ioctl.h>	/* for ioctl() */
 #include <stdio.h>
 #include <strings.h>
@@ -22,7 +22,6 @@
 
 int debug = 0;
 
-
 /* utility routines we want to expose. */
 
 /* FIXME: Will probably move dump to another module. */
@@ -34,52 +33,41 @@ dump(const uint8_t *out, ssize_t len)
 	fprintf(stderr, "\n");
 }
 
-int brcm_hci_for_each_dev(int flag, int (*func)(int s, int dev_id, void *context), void *context)
+int
+brcm_hci_for_each_dev(int flag, int (*func)(int s, int dev_id, void *context), void *context)
 {
-    int dev_id = -1;
+	int dev_id = -1;
 
-		if (!func)
-			return -1;
+	if (!func)
+		return -1;
 
-		int s;
-    if ((s = socket(AF_BLUETOOTH, SOCK_RAW, BTPROTO_HCI)) < 0)
-        return -1;
+	int s;
+	if ((s = socket(AF_BLUETOOTH, SOCK_RAW, BTPROTO_HCI)) < 0)
+		return -1;
 
-    struct hci_dev_req *dr;
-    struct hci_dev_list_req *dl = NULL;
-		if ((dl = malloc(HCI_MAX_DEV * sizeof (*dr) + sizeof(*dl))) == NULL)
-				goto done;
+	struct hci_dev_req *dr;
+	struct hci_dev_list_req *dl = NULL;
+	if ((dl = malloc(HCI_MAX_DEV * sizeof (*dr) + sizeof(*dl))) == NULL)
+		goto done;
 
-    dl->dev_num = HCI_MAX_DEV;
-    dr = dl->dev_req;
+	dl->dev_num = HCI_MAX_DEV;
+	dr = dl->dev_req;
 
-    if (ioctl(s, HCIGETDEVLIST, (void *)dl))
-        goto done;
+	if (ioctl(s, HCIGETDEVLIST, (void *)dl))
+		goto done;
 
-    for (int i = 0; i < dl->dev_num; i++, dr++) {
-        if (hci_test_bit(flag, &dr->dev_opt))
-            if (!func || func(s, dr->dev_id, context)) {
-                dev_id = dr->dev_id;
-                break;
-            }
-    }
+	for (int i = 0; i < dl->dev_num; i++, dr++) {
+		if (hci_test_bit(flag, &dr->dev_opt))
+			if (!func || func(s, dr->dev_id, context)) {
+				dev_id = dr->dev_id;
+				break;
+			}
+	}
 
 done:
-    close(s);
-    free(dl);
-    return dev_id;
-}
-
-static void
-init_hci(int hcifd)
-{
-	struct hci_filter flt;
-
-	hci_filter_clear(&flt);
-	hci_filter_set_ptype(HCI_EVENT_PKT, &flt);
-	hci_filter_all_events(&flt);
-
-	setsockopt(hcifd, SOL_HCI, HCI_FILTER, &flt, sizeof (flt));
+	close(s);
+	free(dl);
+	return dev_id;
 }
 
 static ssize_t
@@ -90,63 +78,24 @@ read_event(int fd, uint8_t *buffer)
 	return bytesin;
 }
 
-static void
-brcm_hci_send_command(int hcifd,
-	hci_command_hdr *hci_command,
-	const uint8_t *payload)
+int
+brcm_hci_send_cmd(int sock, uint16_t cmd, uint8_t plen, void *param)
 {
-	uint8_t type = HCI_COMMAND_PKT;
-	struct iovec iv[3] = {
-		[0] = { .iov_base = &type, .iov_len = 1 },
-		[1] = { .iov_base = hci_command, .iov_len = HCI_COMMAND_HDR_SIZE }
-	};
+	uint16_t	ogf = cmd >> 10,
+						ocf = cmd & 0x3f;
 
-	/* FIXME: Should this be if len - 4 > 0? */
-	if (hci_command->plen) {
-		iv[2].iov_base = (void *)payload;
-		iv[2].iov_len = hci_command->plen;
-	}
+	hexdump(param, plen, "Sending: 0x%x\n", cmd);
 
-	while (writev(hcifd, iv, hci_command->plen ? 3 : 2) < 0)
-		if (errno != EAGAIN && errno != EINTR)
-			brcm_error(0, "writev() failed. (%s)\n", strerror(errno));
+	return hci_send_cmd(sock, ogf, ocf, plen, param);
 }
 
-static void
-hci_send_data(int hcifd, uint8_t *buf, size_t nbytes)
-{
-	/* Attempt to write data to socket.  If we get an EAGAIN or EINTR,
-	   try again.  Otherwise, exit.  */
-	while (write(hcifd, buf, nbytes) < 0) 
-		if (errno != EAGAIN && errno != EINTR)
-			brcm_error(0, "write(): failed (%s).\n", strerror(errno));
-}
-
-/*
-#define HCIT_TYPE_COMMAND 1
-static void
-brcm_hci_send_cmd_func(int hcifd, const uint8_t *buf, ssize_t len)
-{
-	hexdump(buf, len, "Writing\n");
-
-	if (buf[0] == HCIT_TYPE_COMMAND)
-		brcm_hci_send_command(hcifd, buf, len);
-	else
-		hci_send_data(hcifd, (uint8_t *)buf, len);
-}
-*/
-
+#define BRCM_HCI_OP_RESET 0x0c03
 static void
 proc_reset(int hcifd)
 {
 	uint8_t buffer[1024];
 	for (unsigned try = 0; try < 5; try++) {
-		hci_command_hdr hci_reset = {
-			.opcode = 0xc03,
-			.plen = 0
-		};
-
-		brcm_hci_send_command(hcifd, &hci_reset, NULL);
+		brcm_hci_send_cmd(hcifd, BRCM_HCI_OP_RESET, 0, NULL);
 			
 		/* Wait 4 seconds for descriptor to be readable. */ 
 		struct pollfd pfd = { .fd = hcifd, .events = POLLIN };
@@ -161,15 +110,11 @@ proc_reset(int hcifd)
 }
 
 /* patch related routines we want to expose. */
+
+#define BRCM_SET_BDADDR 0xfc01
 int
 brcm_set_bdaddr_usb(int hcifd, const char *bdaddr_string)
 {
-	hci_command_hdr hci_set_bdaddr = {
-		.opcode = 0xfc01,
-		.plen = 6
-	};
-
-
 	unsigned bd_addr[6];
 	if (sscanf(bdaddr_string, "%02x:%02x:%02x:%02x:%02x:%02x", &bd_addr[0], &bd_addr[1], &bd_addr[2], &bd_addr[3], &bd_addr[4], &bd_addr[5]) != 6)
 		if (sscanf(bdaddr_string, "%02x%02x%02x%02x%02x%02x", &bd_addr[0], &bd_addr[1], &bd_addr[2], &bd_addr[3], &bd_addr[4], &bd_addr[5]) != 6)
@@ -180,14 +125,13 @@ brcm_set_bdaddr_usb(int hcifd, const char *bdaddr_string)
 	for (unsigned i = 0; i < 6; i++)
 		bdaddr[i] = bd_addr[i];
 
-	brcm_hci_send_command(hcifd, &hci_set_bdaddr, bdaddr);
+	brcm_hci_send_cmd(hcifd, BRCM_SET_BDADDR, 6, bdaddr);
 
 	uint8_t buffer[1024];
 	read_event(hcifd, buffer);
 
 	return 0;
 }
-
 
 /* Callback for hci brcm_hci_for_each_dev() that prints the available
     bluetooth devices to stdout. */
@@ -262,82 +206,42 @@ brcm_patchram_usb_init(const char *hci_device)
 		return -1;
 		/* brcm_error(2, "device %s could not be found\n", argv[optind]); */
 
-	init_hci(hcifd);
+	struct hci_filter flt;
+	hci_filter_clear(&flt);
+	hci_filter_set_ptype(HCI_EVENT_PKT, &flt);
+	hci_filter_all_events(&flt);
+	setsockopt(hcifd, SOL_HCI, HCI_FILTER, &flt, sizeof (flt));
 
 	return hcifd;
 }
 
+#define BRCM_HCI_DOWNLOAD_MINIDRIVER 0xfc2e
 /* FIXME: This should return something useful.  Perhaps bytes written? */
 void
 brcm_patchram_usb(int hcifd, int hcdfd /* readable descriptor for patchram file. */)
 {
 	uint8_t buffer[1024];
 
-
 	proc_reset(hcifd);
 
-	hci_command_hdr hci_download_minidriver = {
-		.opcode = 0xfc2e,
-		.plen = 0
-	};
-
-	brcm_hci_send_command(hcifd, &hci_download_minidriver, NULL);
+	brcm_hci_send_cmd(hcifd, BRCM_HCI_DOWNLOAD_MINIDRIVER, 0, NULL);
 
 	read_event(hcifd, buffer);
 
 	/* FIXME: Why sleep here?  Does the driver require a pause after
 		sending the HCIDownloadMinidriver command?  */
-
 	sleep(1);
 
-	/* FIXME: This loop is ugly! */
-  /*
-		Okay -- it looks like there are commands embedded in
-		the HCD file.
-
-		So for some commands, it appears we can also send a
-		payload.
-
-		Commands appear to be four bytes with the first byte
-		always being 0x01, next two bytes of command, followed
-		by a payload size.
-
-				+------+------+------+------+
-				| 0x01 | CMD0 | CMD1 | PLS  |
-				+------+------+------+------+
-
-		The commands in the hcd file drop the leading 0x01 so it
-		must be added before calling brcm_hci_send_command().
-
-		Perhaps brcm_hci_send_command() should take parameters like:
-
-			hcifd
-			command
-			payload_size
-			payload
-
-		And, of course, if payload_size is 0, then we skip sending
-		the payload.
-
-		I assume the read after the command includes some kind
-		of response.  I'm not sure how to determine if a command
-		succeeds or fails yet.	It'd be nice to test this in
-		the loop.
-
-		----------
-
-		After reading the code a bit more, it looks like
-		hci_command_hdr has an element for the payload size.
-
-   */
 	hci_command_hdr hci_command;
 	while (read(hcdfd, &hci_command, sizeof (hci_command)) != -1) {
 		uint8_t payload[hci_command.plen];
 		ssize_t bytesin = read(hcdfd, payload, sizeof (payload));
 
+		hci_command.opcode = htons(hci_command.opcode);
+
 		assert ((size_t)bytesin == sizeof (payload));
 
-		brcm_hci_send_command(hcifd, &hci_command, payload);
+		brcm_hci_send_cmd(hcifd, hci_command.opcode, hci_command.plen, payload);
 		read_event(hcifd, buffer);
 	}
 
