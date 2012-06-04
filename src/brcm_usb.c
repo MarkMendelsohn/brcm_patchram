@@ -8,6 +8,7 @@
 #include <getopt.h>
 #include <errno.h>
 #include <poll.h>
+#include <assert.h>
 
 #include <sys/types.h>
 #include <sys/stat.h>
@@ -90,26 +91,23 @@ read_event(int fd, uint8_t *buffer)
 }
 
 static void
-hci_send_command(int hcifd, const uint8_t *buf, ssize_t len)
+brcm_hci_send_command(int hcifd,
+	hci_command_hdr *hci_command,
+	const uint8_t *payload)
 {
-	hci_command_hdr hc = {
-		.opcode = buf[1] | (buf[2] << 8),
-		.plen = len - 4
-	};
-
 	uint8_t type = HCI_COMMAND_PKT;
 	struct iovec iv[3] = {
 		[0] = { .iov_base = &type, .iov_len = 1 },
-		[1] = { .iov_base = &hc, .iov_len = HCI_COMMAND_HDR_SIZE }
+		[1] = { .iov_base = hci_command, .iov_len = HCI_COMMAND_HDR_SIZE }
 	};
 
 	/* FIXME: Should this be if len - 4 > 0? */
-	if (len - 4) {
-		iv[2].iov_base = (void *)&buf[4];
-		iv[2].iov_len = len - 4;
+	if (hci_command->plen) {
+		iv[2].iov_base = (void *)payload;
+		iv[2].iov_len = hci_command->plen;
 	}
 
-	while (writev(hcifd, iv, (len - 4) ? 3 : 2) < 0)
+	while (writev(hcifd, iv, hci_command->plen ? 3 : 2) < 0)
 		if (errno != EAGAIN && errno != EINTR)
 			brcm_error(0, "writev() failed. (%s)\n", strerror(errno));
 }
@@ -124,25 +122,31 @@ hci_send_data(int hcifd, uint8_t *buf, size_t nbytes)
 			brcm_error(0, "write(): failed (%s).\n", strerror(errno));
 }
 
+/*
 #define HCIT_TYPE_COMMAND 1
 static void
-hci_send_cmd_func(int hcifd, const uint8_t *buf, ssize_t len)
+brcm_hci_send_cmd_func(int hcifd, const uint8_t *buf, ssize_t len)
 {
 	hexdump(buf, len, "Writing\n");
 
 	if (buf[0] == HCIT_TYPE_COMMAND)
-		hci_send_command(hcifd, buf, len);
+		brcm_hci_send_command(hcifd, buf, len);
 	else
 		hci_send_data(hcifd, (uint8_t *)buf, len);
 }
+*/
 
 static void
 proc_reset(int hcifd)
 {
 	uint8_t buffer[1024];
 	for (unsigned try = 0; try < 5; try++) {
-		const uint8_t hci_reset[] = { 0x01, 0x03, 0x0c, 0x00 };
-		hci_send_cmd_func(hcifd, hci_reset, sizeof(hci_reset));
+		hci_command_hdr hci_reset = {
+			.opcode = 0xc03,
+			.plen = 0
+		};
+
+		brcm_hci_send_command(hcifd, &hci_reset, NULL);
 			
 		/* Wait 4 seconds for descriptor to be readable. */ 
 		struct pollfd pfd = { .fd = hcifd, .events = POLLIN };
@@ -160,22 +164,25 @@ proc_reset(int hcifd)
 int
 brcm_set_bdaddr_usb(int hcifd, const char *bdaddr_string)
 {
-	uint8_t hci_write_bd_addr[] = {
-		0x01, 0x01, 0xfc, 0x06, 
-		0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-		0x00
+	hci_command_hdr hci_set_bdaddr = {
+		.opcode = 0xfc01,
+		.plen = 6
 	};
+
 
 	unsigned bd_addr[6];
 	if (sscanf(bdaddr_string, "%02x:%02x:%02x:%02x:%02x:%02x", &bd_addr[0], &bd_addr[1], &bd_addr[2], &bd_addr[3], &bd_addr[4], &bd_addr[5]) != 6)
 		if (sscanf(bdaddr_string, "%02x%02x%02x%02x%02x%02x", &bd_addr[0], &bd_addr[1], &bd_addr[2], &bd_addr[3], &bd_addr[4], &bd_addr[5]) != 6)
 			return -1;
 
+	uint8_t bdaddr[6];
+
 	for (unsigned i = 0; i < 6; i++)
-		hci_write_bd_addr[4 + i] = bd_addr[i];
+		bdaddr[i] = bd_addr[i];
+
+	brcm_hci_send_command(hcifd, &hci_set_bdaddr, bdaddr);
 
 	uint8_t buffer[1024];
-	hci_send_cmd_func(hcifd, hci_write_bd_addr, sizeof(hci_write_bd_addr));
 	read_event(hcifd, buffer);
 
 	return 0;
@@ -265,11 +272,16 @@ void
 brcm_patchram_usb(int hcifd, int hcdfd /* readable descriptor for patchram file. */)
 {
 	uint8_t buffer[1024];
-	const uint8_t hci_download_minidriver[] = { 0x01, 0x2e, 0xfc, 0x00 };
+
 
 	proc_reset(hcifd);
 
-	hci_send_cmd_func(hcifd, hci_download_minidriver, sizeof(hci_download_minidriver));
+	hci_command_hdr hci_download_minidriver = {
+		.opcode = 0xfc2e,
+		.plen = 0
+	};
+
+	brcm_hci_send_command(hcifd, &hci_download_minidriver, NULL);
 
 	read_event(hcifd, buffer);
 
@@ -278,12 +290,54 @@ brcm_patchram_usb(int hcifd, int hcdfd /* readable descriptor for patchram file.
 
 	sleep(1);
 
-	while (read(hcdfd, &buffer[1], 3)) {
-		buffer[0] = 0x01;
-		ssize_t bufsize = buffer[3],
-						bytesin = read(hcdfd, &buffer[4], bufsize);
+	/* FIXME: This loop is ugly! */
+  /*
+		Okay -- it looks like there are commands embedded in
+		the HCD file.
 
-		hci_send_cmd_func(hcifd, buffer, bytesin + 4);
+		So for some commands, it appears we can also send a
+		payload.
+
+		Commands appear to be four bytes with the first byte
+		always being 0x01, next two bytes of command, followed
+		by a payload size.
+
+				+------+------+------+------+
+				| 0x01 | CMD0 | CMD1 | PLS  |
+				+------+------+------+------+
+
+		The commands in the hcd file drop the leading 0x01 so it
+		must be added before calling brcm_hci_send_command().
+
+		Perhaps brcm_hci_send_command() should take parameters like:
+
+			hcifd
+			command
+			payload_size
+			payload
+
+		And, of course, if payload_size is 0, then we skip sending
+		the payload.
+
+		I assume the read after the command includes some kind
+		of response.  I'm not sure how to determine if a command
+		succeeds or fails yet.	It'd be nice to test this in
+		the loop.
+
+		----------
+
+		After reading the code a bit more, it looks like
+		hci_command_hdr has an element for the payload size.
+
+   */
+	hci_command_hdr hci_command;
+	while (read(hcdfd, &hci_command, sizeof (hci_command)) != -1) {
+		uint8_t payload[hci_command.plen];
+		ssize_t bytesin = read(hcdfd, payload, sizeof (payload));
+
+		assert ((size_t)bytesin == sizeof (payload));
+
+		brcm_hci_send_command(hcifd, &hci_command, payload);
 		read_event(hcifd, buffer);
 	}
 
