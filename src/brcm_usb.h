@@ -8,7 +8,7 @@
 
 /* FIXME: Maybe we can remove the file, line, and function. */
 #define brcm_error(rc,s,...) ({ fprintf(stderr, "%s,%s():%d: " s, __FILE__, __func__, __LINE__, ##__VA_ARGS__); exit(rc); })
-#define hexdump(buf, len, s, ...) ({ if (debug) { fprintf(stderr, s,##__VA_ARGS__); dump(buf, len); } })
+#define hexdump(buf, len, s, ...) ({ if (debug) { fprintf(stderr, "%s,%s():%d: " s,__FILE__,__func__,__LINE__,##__VA_ARGS__); dump(buf, len); } })
 
 /* brcm_usb.c */
 void dump(const uint8_t *out, ssize_t len);

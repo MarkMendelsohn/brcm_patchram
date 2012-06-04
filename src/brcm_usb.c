@@ -81,10 +81,12 @@ read_event(int fd, uint8_t *buffer)
 int
 brcm_hci_send_cmd(int sock, uint16_t cmd, uint8_t plen, void *param)
 {
-	uint16_t	ogf = cmd >> 10,
-						ocf = cmd & 0x3f;
+	uint16_t	ogf = cmd >> 8,
+						ocf = cmd & 0x00ff;
 
-	hexdump(param, plen, "Sending: 0x%x\n", cmd);
+	hexdump(param, plen,
+		"Sending: 0x%x (0x%0x, 0x%0x)\n",
+		cmd, ogf, ocf);
 
 	return hci_send_cmd(sock, ogf, ocf, plen, param);
 }
@@ -229,20 +231,22 @@ brcm_patchram_usb(int hcifd, int hcdfd /* readable descriptor for patchram file.
 	read_event(hcifd, buffer);
 
 	/* FIXME: Why sleep here?  Does the driver require a pause after
-		sending the HCIDownloadMinidriver command?  */
+		 sending the HCIDownloadMinidriver command?  */
 	sleep(1);
 
 	hci_command_hdr hci_command;
-	while (read(hcdfd, &hci_command, sizeof (hci_command)) != -1) {
+	while (read(hcdfd, &hci_command, sizeof (hci_command)) > 0) {
 		uint8_t payload[hci_command.plen];
 		ssize_t bytesin = read(hcdfd, payload, sizeof (payload));
 
-		hci_command.opcode = htons(hci_command.opcode);
-
-		assert ((size_t)bytesin == sizeof (payload));
-
-		brcm_hci_send_cmd(hcifd, hci_command.opcode, hci_command.plen, payload);
-		read_event(hcifd, buffer);
+		if (bytesin > 0) {
+			hci_command.opcode = htons(hci_command.opcode);
+			brcm_hci_send_cmd(hcifd, hci_command.opcode, hci_command.plen, payload);
+			read_event(hcifd, buffer);
+		} else {
+			/* FIXME: is it worth while to try to recover from this error? */
+			break;
+		}
 	}
 
 	proc_reset(hcifd);
