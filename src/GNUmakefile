@@ -18,15 +18,17 @@
 
 LDLIBS	:=	-lbluetooth
 CFLAGS	:=	-Wall -W -MMD -Os -std=gnu99
-TARGETS :=	brcm_patchram_plus_usb brcm_patchram_plus brcm_patchram_plus_h5
+TARGETS :=	brcm-patchram brcm_patchram_plus brcm_patchram_plus_h5 brcm_patchram_plus_usb
 
 .PHONY : clean
 
 all: $(TARGETS)
 
-brcm_patchram_plus_h5: brcm_patchram_plus_h5.o
+brcm-patchram: brcm-patchram.o
 
 brcm_patchram_plus: brcm_patchram_plus.o
+
+brcm_patchram_plus_h5: brcm_patchram_plus_h5.o
 
 brcm_patchram_plus_usb: brcm_patchram_plus_usb.o brcm_usb.o
 

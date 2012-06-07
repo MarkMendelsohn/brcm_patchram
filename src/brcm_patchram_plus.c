@@ -447,41 +447,59 @@ usage(char *argv0)
 int
 parse_cmd_line(int argc, char **argv)
 {
-	int c;
 	int ret = 0;
 
 	typedef int (*PFI)();
 
-	PFI parse[] = { parse_patchram, parse_baudrate,
-		parse_bdaddr, parse_enable_lpm, parse_enable_hci,
+	PFI parse[] = {
+		parse_patchram,
+		parse_baudrate,
+		parse_bdaddr,
+		parse_enable_lpm,
+		parse_enable_hci,
 		parse_use_baudrate_for_download,
-		parse_scopcm, parse_i2s, parse_no2bytes, parse_tosleep};
+		parse_scopcm,
+		parse_i2s,
+		parse_no2bytes,
+		parse_tosleep
+	};
 
-	while (1) {
-		int option_index = 0;
+	static struct option long_options[] = {
+		{ "baud",				1, 0, 'B' },
+		{ "bdaddr",			1, 0, 'b' },
+		{ "enable-hci",	0, 0, 'h' },
+		{ "enable-lpm",	0, 0, 'l' },
+		{ "i2s",				1, 0, 'i' },
+		{ "no2bytes",		0, 0, 'n' },
+		{ "patchram",		1, 0, 'p' },
+		{ "scopcm",			1, 0, 's' },
+		{ "tosleep",		1, 0, 't' },
+		{ "use_baudrate_for_download", 0, 0, 'u' },
+		{ NULL,					0, 0, 0}
+	};
 
-		static struct option long_options[] = {
-			{"patchram", 1, 0, 0},
-			{"baudrate", 1, 0, 0},
-			{"bd_addr", 1, 0, 0},
-			{"enable_lpm", 0, 0, 0},
-			{"enable_hci", 0, 0, 0},
-			{"use_baudrate_for_download", 0, 0, 0},
-			{"scopcm", 1, 0, 0},
-			{"i2s", 1, 0, 0},
-			{"no2bytes", 0, 0, 0},
-			{"tosleep", 1, 0, 0},
-			{0, 0, 0, 0}
-		};
+	int arg, option_index = 0;
+	while ((arg = getopt_long_only(argc, argv, "B:b:hli:np:s:t:u", long_options, &option_index)) != -1) {
+		switch (arg) {
+			case 'B':		/* --baud */
+				break;
+			case 'b':		/* --bdaddr */
+				break;
+			case 'h':		/* --enable-hci */
+				break;
+			case 'i':		/* --i2s */
+				break;
+			case 'l':		/* --enable-lpm */
+				break;
+			case 'n':		/* --no2bytes */
+				break;
+			case 'p':		/* --patchram */
+				break;
+			case 's':		/* --scopcm */
+				break;
+			case 't':		/* --tosleep */
+				break;
 
-		c = getopt_long_only (argc, argv, "d", long_options,
-				&option_index);
-
-		if (c == -1) {
-			break;
-		}
-
-		switch (c) {
 			case 0:
 				if (debug) {
 					printf ("option %s",
