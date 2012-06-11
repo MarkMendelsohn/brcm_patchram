@@ -102,8 +102,6 @@
 **  
 ******************************************************************************/
 
-// TODO: Integrate BCM support into Bluez hciattach
-
 #include <stdio.h>
 #include <getopt.h>
 #include <errno.h>

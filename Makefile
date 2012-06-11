@@ -16,10 +16,10 @@
 #*
 #******************************************************************************
 
-LDFLAGS = -lbluetooth
-CFLAGS=-g
+LDLIBS = -lbluetooth
+# CFLAGS=-g
 
-# CFLAGS=
+CFLAGS=
 
 all : brcm_patchram_plus brcm_patchram_plus_h5 brcm_patchram_plus_usb
 
