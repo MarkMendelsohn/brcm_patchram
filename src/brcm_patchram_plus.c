@@ -123,8 +123,11 @@
 #include <limits.h>
 #endif
 
+
 #include <string.h>
 #include <signal.h>
+
+#include "common.h"
 
 #ifdef ANDROID
 #include <cutils/properties.h>
@@ -261,32 +264,17 @@ tBaudRates baud_rates[] = {
 };
 
 int
-validate_baudrate(int baud_rate, int *value)
-{
-	unsigned int i;
-
-	for (i = 0; i < (sizeof(baud_rates) / sizeof(tBaudRates)); i++) {
-		if (baud_rates[i].baud_rate == baud_rate) {
-			*value = baud_rates[i].termios_value;
-			return(1);
-		}
-	}
-
-	return(0);
-}
-
-int
 parse_baudrate(char *optarg)
 {
-	baudrate = atoi(optarg);
+	int baudrate = atoi(optarg);
 
-	if (validate_baudrate(baudrate, &termios_baudrate)) {
-		BRCM_encode_baud_rate(baudrate, &hci_update_baud_rate[6]);
-	} else {
-		return(1);
-	}
+	termios_baudrate = validate_baudrate(baudrate);
 
-	return(0);
+	if (termios_baudrate == -1)
+		return -1;
+
+	BRCM_encode_baud_rate(baudrate, &hci_update_baud_rate[6]);
+	return termios_baudrate;
 }
 
 int

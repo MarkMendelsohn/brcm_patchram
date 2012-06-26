@@ -12,3 +12,8 @@ The intention of the fork is to:
 * Use libbluetooth instead of direct writes where possible.
 * Package for debian, ubuntu, and redhat.
 
+Purpose
+=======
+
+The purpose of these utilities is to read a file that contains a series of HCI layer bluetooth commands and send them to a bluetooth device.
+

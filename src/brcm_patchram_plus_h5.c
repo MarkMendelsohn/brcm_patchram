@@ -125,6 +125,8 @@
 #include <signal.h>
 #include <time.h>
 
+#include "common.h"
+
 #ifdef ANDROID
 #include <cutils/properties.h>
 #define LOG_TAG "brcm_patchram_plus"
@@ -260,57 +262,19 @@ BRCM_encode_baud_rate(uint baud_rate, uchar *encoded_baud)
 	encoded_baud[0] = (uchar)(baud_rate & 0xFF);
 }
 
-typedef struct {
-	int baud_rate;
-	int termios_value;
-} tBaudRates;
-
-tBaudRates baud_rates[] = {
-	{ 115200, B115200 },
-	{ 230400, B230400 },
-	{ 460800, B460800 },
-	{ 500000, B500000 },
-	{ 576000, B576000 },
-	{ 921600, B921600 },
-	{ 1000000, B1000000 },
-	{ 1152000, B1152000 },
-	{ 1500000, B1500000 },
-	{ 2000000, B2000000 },
-	{ 2500000, B2500000 },
-	{ 3000000, B3000000 },
-#ifndef __CYGWIN__
-	{ 3500000, B3500000 },
-	{ 4000000, B4000000 }
-#endif
-};
-
-int
-validate_baudrate(int baud_rate, int *value)
-{
-	unsigned int i;
-
-	for (i = 0; i < (sizeof(baud_rates) / sizeof(tBaudRates)); i++) {
-		if (baud_rates[i].baud_rate == baud_rate) {
-			*value = baud_rates[i].termios_value;
-			return 1;
-		}
-	}
-
-	return 0;
-}
 
 int
 parse_baudrate(char *optarg)
 {
 	int baudrate = atoi(optarg);
 
-	if (validate_baudrate(baudrate, &termios_baudrate)) {
-		BRCM_encode_baud_rate(baudrate, &hci_update_baud_rate[6]);
-	} else {
-		return 1;
-	}
+	termios_baudrate = validate_baudrate(baudrate);
 
-	return 0;
+	if (termios_baudrate == -1)
+		return -1;
+
+	BRCM_encode_baud_rate(baudrate, &hci_update_baud_rate[6]);
+	return termios_baudrate;
 }
 
 int
@@ -488,6 +452,7 @@ parse_cmd_line(int argc, char **argv)
 		parse_enable_h5, parse_use_baudrate_for_download,
 		parse_scopcm, parse_i2s, parse_no2bytes, parse_tosleep};
 
+
 	while (1) {
 		int option_index = 0;
 
@@ -523,7 +488,7 @@ parse_cmd_line(int argc, char **argv)
 					printf ("\n");
 				}
 
-				ret = (*parse[option_index])(optarg);
+				ret = parse[option_index](optarg);
 
 				break;
 			case 'd':
