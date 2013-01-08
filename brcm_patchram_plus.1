@@ -36,7 +36,17 @@ Print debug messages.
 .IP "--enable_lpm"
 Enable low power mode
 
-.IP "--enable_hci"
+.IP "--enable_hci | enable_h4"
+
+The use of either of these parameters will cause the H4 Line
+Discipline to be loaded and the port to be kept 
+open until the program is terminated.
+
+.IP "--enable_h5"
+
+The use of either of these parameters will cause the H5
+(3-Wire) Line Discipline to be loaded and the port to be kept 
+open until the program is terminated.
 
 .IP "--use_baudrate_for_download"
 
